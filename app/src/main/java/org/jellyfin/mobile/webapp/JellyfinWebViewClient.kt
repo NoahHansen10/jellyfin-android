@@ -1,5 +1,6 @@
 package org.jellyfin.mobile.webapp
 
+import android.net.Uri
 import android.net.http.SslError
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceRequest
@@ -36,6 +37,22 @@ abstract class JellyfinWebViewClient(
     abstract fun onConnectedToWebapp()
 
     abstract fun onErrorReceived()
+
+    abstract fun onOpenExternalUri(uri: Uri): Boolean
+
+    override fun shouldOverrideUrlLoading(webView: WebView, request: WebResourceRequest): Boolean {
+        if (!request.isForMainFrame) return false
+
+        val uri = request.url
+        val scheme = uri.scheme?.lowercase(Locale.ROOT)
+        return when (scheme) {
+            null, "about", "http", "https" -> false
+            else -> {
+                Timber.i("Opening external WebView URI: %s", uri)
+                onOpenExternalUri(uri)
+            }
+        }
+    }
 
     override fun shouldInterceptRequest(webView: WebView, request: WebResourceRequest): WebResourceResponse? {
         val url = request.url
