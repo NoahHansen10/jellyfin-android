@@ -1,5 +1,6 @@
 package org.jellyfin.mobile.webapp
 
+import android.net.Uri
 import android.net.http.SslError
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceRequest
@@ -35,7 +36,23 @@ abstract class JellyfinWebViewClient(
 
     abstract fun onConnectedToWebapp()
 
-    abstract fun onErrorReceived()
+    abstract fun onErrorReceived(isForMainFrame: Boolean)
+
+    abstract fun onOpenExternalUri(uri: Uri): Boolean
+
+    override fun shouldOverrideUrlLoading(webView: WebView, request: WebResourceRequest): Boolean {
+        if (!request.isForMainFrame) return false
+
+        val uri = request.url
+        val scheme = uri.scheme?.lowercase(Locale.ROOT)
+        return when (scheme) {
+            null, "about", "http", "https" -> false
+            else -> {
+                Timber.i("Opening external WebView URI: %s", uri)
+                onOpenExternalUri(uri)
+            }
+        }
+    }
 
     override fun shouldInterceptRequest(webView: WebView, request: WebResourceRequest): WebResourceResponse? {
         val url = request.url
@@ -82,9 +99,14 @@ abstract class JellyfinWebViewClient(
         errorResponse: WebResourceResponse,
     ) {
         val errorMessage = errorResponse.data?.run { bufferedReader().use(Reader::readText) }
-        Timber.e("Received WebView HTTP %d error: %s", errorResponse.statusCode, errorMessage)
+        Timber.e(
+            "Received WebView HTTP %d error at %s: %s",
+            errorResponse.statusCode,
+            request.url.toString(),
+            errorMessage,
+        )
 
-        if (request.isForMainFrame) onErrorReceived()
+        onErrorReceived(request.isForMainFrame)
     }
 
     override fun onReceivedError(
@@ -102,8 +124,7 @@ abstract class JellyfinWebViewClient(
         }
         Timber.e("Received WebView error %d at %s: %s", errorCode, request.url.toString(), description)
 
-        // Abort on some specific error codes or when the request url matches the server url
-        if (request.isForMainFrame) onErrorReceived()
+        onErrorReceived(request.isForMainFrame)
     }
 
     override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
