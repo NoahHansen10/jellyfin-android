@@ -123,6 +123,16 @@ class WebViewFragment :
                     handleError()
                 }
             }
+
+            override fun onOpenExternalUri(uri: Uri): Boolean {
+                activityEventHandler.emit(ActivityEvent.OpenUrl(uri.toString()))
+                return true
+            }
+
+            override fun onOpenExternalUri(uri: Uri): Boolean {
+                activityEventHandler.emit(ActivityEvent.OpenUrl(uri.toString()))
+                return true
+            }
         }
         externalPlayer = ExternalPlayer(requireContext(), this, requireActivity().activityResultRegistry)
     }
