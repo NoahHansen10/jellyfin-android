@@ -113,8 +113,20 @@ class WebViewFragment :
                 requestNoBatteryOptimizations(webViewBinding.root)
             }
 
-            override fun onErrorReceived() {
-                handleError()
+            override fun onErrorReceived(isForMainFrame: Boolean) {
+                if (
+                    WebViewErrorPolicy.shouldReportConnectionError(
+                        isForMainFrame = isForMainFrame,
+                        connectedToWebapp = connected,
+                    )
+                ) {
+                    handleError()
+                }
+            }
+
+            override fun onOpenExternalUri(uri: Uri): Boolean {
+                activityEventHandler.emit(ActivityEvent.OpenUrl(uri.toString()))
+                return true
             }
 
             override fun onOpenExternalUri(uri: Uri): Boolean {
