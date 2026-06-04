@@ -8,6 +8,7 @@ import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.CookieManager
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient.FileChooserParams
 import android.webkit.WebView
@@ -32,6 +33,8 @@ import org.jellyfin.mobile.bridge.NativeInterface
 import org.jellyfin.mobile.bridge.NativePlayer
 import org.jellyfin.mobile.data.entity.ServerEntity
 import org.jellyfin.mobile.databinding.FragmentWebviewBinding
+import org.jellyfin.mobile.events.ActivityEvent
+import org.jellyfin.mobile.events.ActivityEventHandler
 import org.jellyfin.mobile.setup.ConnectFragment
 import org.jellyfin.mobile.utils.AndroidVersion
 import org.jellyfin.mobile.utils.BackPressInterceptor
@@ -48,10 +51,15 @@ import org.jellyfin.mobile.utils.requestNoBatteryOptimizations
 import org.jellyfin.mobile.utils.runOnUiThread
 import org.koin.android.ext.android.inject
 
-class WebViewFragment : Fragment(), BackPressInterceptor, JellyfinWebChromeClient.FileChooserListener {
+class WebViewFragment :
+    Fragment(),
+    BackPressInterceptor,
+    JellyfinWebChromeClient.FileChooserListener,
+    JellyfinWebChromeClient.NewWindowListener {
     val appPreferences: AppPreferences by inject()
     private val apiClientController: ApiClientController by inject()
     private val webappFunctionChannel: WebappFunctionChannel by inject()
+    private val activityEventHandler: ActivityEventHandler by inject()
     private lateinit var assetsPathHandler: AssetsPathHandler
     private lateinit var jellyfinWebViewClient: JellyfinWebViewClient
     private val nativePlayer: NativePlayer by inject()
@@ -107,6 +115,11 @@ class WebViewFragment : Fragment(), BackPressInterceptor, JellyfinWebChromeClien
 
             override fun onErrorReceived() {
                 handleError()
+            }
+
+            override fun onOpenExternalUri(uri: Uri): Boolean {
+                activityEventHandler.emit(ActivityEvent.OpenUrl(uri.toString()))
+                return true
             }
         }
         externalPlayer = ExternalPlayer(requireContext(), this, requireActivity().activityResultRegistry)
@@ -182,8 +195,9 @@ class WebViewFragment : Fragment(), BackPressInterceptor, JellyfinWebChromeClien
             return
         }
         webViewClient = jellyfinWebViewClient
-        webChromeClient = JellyfinWebChromeClient(this@WebViewFragment)
+        webChromeClient = JellyfinWebChromeClient(this@WebViewFragment, this@WebViewFragment)
         settings.applyDefault()
+        configureCookies()
         addJavascriptInterface(NativeInterface(requireContext()), "NativeInterface")
         addJavascriptInterface(nativePlayer, "NativePlayer")
         addJavascriptInterface(externalPlayer, "ExternalPlayer")
@@ -192,6 +206,25 @@ class WebViewFragment : Fragment(), BackPressInterceptor, JellyfinWebChromeClien
         loadUrl(server.hostname)
         postDelayed(timeoutRunnable, Constants.INITIAL_CONNECTION_TIMEOUT)
         postDelayed(showLoadingContainerRunnable, Constants.SHOW_PROGRESS_BAR_DELAY)
+    }
+
+    override fun onOpenNewWindow(uri: Uri): Boolean = when (uri.scheme?.lowercase()) {
+        null, "http", "https" -> webViewBinding?.webView?.run {
+            loadUrl(uri.toString())
+            true
+        } ?: false
+        "about" -> false
+        else -> {
+            activityEventHandler.emit(ActivityEvent.OpenUrl(uri.toString()))
+            true
+        }
+    }
+
+    private fun WebView.configureCookies() {
+        CookieManager.getInstance().apply {
+            setAcceptCookie(true)
+            setAcceptThirdPartyCookies(this@configureCookies, true)
+        }
     }
 
     private fun showOutdatedWebViewDialog(webView: WebView) {
